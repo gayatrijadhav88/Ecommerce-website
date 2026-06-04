@@ -1,20 +1,11 @@
-import os
 from typing import List, Optional
 
-from dotenv import load_dotenv
 from fastapi import FastAPI
 from pydantic import BaseModel
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
-load_dotenv()
-
-try:
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    from langchain_core.prompts import ChatPromptTemplate
-except Exception:
-    ChatGoogleGenerativeAI = None
-    ChatPromptTemplate = None
-
-app = FastAPI(title="SmartCommerce AI Chatbot Service")
+app = FastAPI(title="SmartCommerce AI Recommendation Engine")
 
 
 class Product(BaseModel):
@@ -29,52 +20,53 @@ class Product(BaseModel):
     image: Optional[str] = None
 
 
-class ChatRequest(BaseModel):
-    message: str
+class RecommendationRequest(BaseModel):
     products: List[Product]
-    user: Optional[dict] = None
+    history: List[Product] = []
+    limit: int = 8
 
 
-def build_context(products: List[Product]) -> str:
-    return "\n".join(
-        f"- {p.name} | {p.category} | Rs {p.price} | rating {p.rating} | {p.description}"
-        for p in products[:30]
-    )
-
-
-def fallback_answer(message: str, products: List[Product]) -> str:
-    words = set(message.lower().split())
-    scored = []
-    for product in products:
-        haystack = f"{product.name} {product.category} {product.description} {' '.join(product.tags)}".lower()
-        score = sum(1 for word in words if word in haystack)
-        scored.append((score, product))
-    scored.sort(key=lambda item: (item[0], item[1].rating or 0), reverse=True)
-    picks = [product for score, product in scored[:3] if score > 0] or sorted(products, key=lambda p: p.rating or 0, reverse=True)[:3]
-    names = ", ".join(f"{p.name} (Rs {int(p.price)})" for p in picks)
-    return f"Based on your request, I recommend: {names}. These match your intent and have strong ratings in the current catalog."
+def product_text(product: Product) -> str:
+    return " ".join([
+        product.name,
+        product.brand or "",
+        product.category,
+        product.description,
+        " ".join(product.tags),
+    ])
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "chatbot-service", "geminiConfigured": bool(os.getenv("GEMINI_API_KEY"))}
+    return {"status": "ok", "service": "recommendation-engine"}
 
 
-@app.post("/chat")
-def chat(payload: ChatRequest):
-    api_key = os.getenv("GEMINI_API_KEY")
-    if api_key and ChatGoogleGenerativeAI and ChatPromptTemplate:
-        llm = ChatGoogleGenerativeAI(
-            model=os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
-            google_api_key=api_key,
-            temperature=0.4,
-        )
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", "You are SmartCommerce AI, a concise shopping assistant. Use only the product context. Recommend specific products with reasons."),
-            ("human", "Product context:\n{context}\n\nCustomer question: {question}")
-        ])
-        response = llm.invoke(prompt.format_messages(context=build_context(payload.products), question=payload.message))
-        return {"answer": response.content}
+@app.post("/recommend")
+def recommend(payload: RecommendationRequest):
+    products = payload.products
+    if not products:
+        return {"recommendations": []}
 
-    return {"answer": fallback_answer(payload.message, payload.products)}
+    if not payload.history:
+        ranked = sorted(products, key=lambda item: (item.rating or 0, -item.price), reverse=True)
+        return {"recommendations": [item.model_dump() for item in ranked[: payload.limit]]}
+
+    corpus = [product_text(product) for product in products]
+    history_text = " ".join(product_text(product) for product in payload.history)
+    vectorizer = TfidfVectorizer(stop_words="english")
+    matrix = vectorizer.fit_transform(corpus + [history_text])
+    scores = cosine_similarity(matrix[-1], matrix[:-1]).flatten()
+    viewed_ids = {item.id for item in payload.history}
+    ranked = [
+        (product, float(scores[index]))
+        for index, product in enumerate(products)
+        if product.id not in viewed_ids
+    ]
+    ranked.sort(key=lambda item: (item[1], item[0].rating or 0), reverse=True)
+    return {
+        "recommendations": [
+            {**product.model_dump(), "score": round(score, 4)}
+            for product, score in ranked[: payload.limit]
+        ]
+    }
 
