@@ -1,0 +1,41 @@
+import { Route, Routes } from 'react-router-dom';
+import AppLayout from './components/AppLayout.jsx';
+import ProtectedRoute from './components/ProtectedRoute.jsx';
+import Home from './pages/Home.jsx';
+import Products from './pages/Products.jsx';
+import ProductDetails from './pages/ProductDetails.jsx';
+import Cart from './pages/Cart.jsx';
+import Wishlist from './pages/Wishlist.jsx';
+import Checkout from './pages/Checkout.jsx';
+import Orders from './pages/Orders.jsx';
+import Profile from './pages/Profile.jsx';
+import Assistant from './pages/Assistant.jsx';
+import AdminDashboard from './pages/AdminDashboard.jsx';
+import AnalyticsDashboard from './pages/AnalyticsDashboard.jsx';
+import Login from './pages/Login.jsx';
+import Register from './pages/Register.jsx';
+
+function App() {
+  return (
+    <Routes>
+      <Route element={<AppLayout />}>
+        <Route index element={<Home />} />
+        <Route path="/products" element={<Products />} />
+        <Route path="/products/:id" element={<ProductDetails />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/cart" element={<ProtectedRoute><Cart /></ProtectedRoute>} />
+        <Route path="/wishlist" element={<ProtectedRoute><Wishlist /></ProtectedRoute>} />
+        <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
+        <Route path="/orders" element={<ProtectedRoute><Orders /></ProtectedRoute>} />
+        <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+        <Route path="/assistant" element={<ProtectedRoute><Assistant /></ProtectedRoute>} />
+        <Route path="/admin" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
+        <Route path="/admin/analytics" element={<ProtectedRoute adminOnly><AnalyticsDashboard /></ProtectedRoute>} />
+      </Route>
+    </Routes>
+  );
+}
+
+export default App;
+
